@@ -333,6 +333,22 @@ type
     procedure Execute; // the user call this to execute the command
     procedure SendLine(const AValue: string; AEol: Boolean); // add a line in the input pipe
     procedure Stop; // the user can stop the process with this method, stops process and waits
+    /// <summary>
+    /// Sends a CTRL+C signal to the associated process to attempt a graceful termination.
+    /// </summary>
+    /// <param name="Timeout">
+    /// The maximum time (in milliseconds) to wait for the process to terminate after sending the CTRL+C signal.
+    /// The default value is 25000 milliseconds (25 seconds).
+    /// </param>
+    /// <remarks>
+    /// This method attaches to the console of the process, sends a CTRL+C event, and waits for the process
+    /// to terminate. If the process does not terminate within the specified timeout, it may be necessary
+    /// to force termination using additional methods.
+    /// </remarks>
+    /// <exception cref="Exception">
+    /// Throws an exception if the CTRL+C event cannot be sent to the process.
+    /// </exception>
+    procedure SendCtrlC(const Timeout: Integer = 25000);
     property EndStatus: TEndStatus read get_EndStatus;
     property ExitCode: Cardinal read FExitCode;
     property IsRunning: Boolean read get_IsRunning; // When true, a command is still running // MK: 20030613
@@ -1121,6 +1137,45 @@ begin
     // FreeAndNil(FThread);
   end;
 end;
+
+procedure TDosCommand.SendCtrlC(const Timeout: Integer = 25000);
+var
+  Attached: Boolean;
+begin
+  // Attach to the console of the process
+  Attached := AttachConsole(Self.ProcessInformation.dwProcessId);
+  if Attached then
+    try
+      // Allow CTRL+C to be generated for the attached console
+      SetConsoleCtrlHandler(nil, True);
+
+      // Send CTRL+C to the process group
+      if not GenerateConsoleCtrlEvent(CTRL_C_EVENT, Self.ProcessInformation.dwProcessId) then
+        raise Exception.Create('Failed to send CTRL+C event to process.');
+
+      // Wait for the process to exit
+      if WaitForSingleObject(Self.ProcessInformation.hProcess, Timeout) <> WAIT_OBJECT_0 then
+      begin
+        // Process did not exit in time, force termination
+        // You can add code here to force terminate the process if necessary
+      end
+      else
+      begin
+        // Process exited successfully
+      end;
+    finally
+      // Restore normal CTRL+C handling
+      SetConsoleCtrlHandler(nil, False);
+      // Detach from the console
+      FreeConsole;
+    end
+  else
+  begin
+    // If we can't attach, fallback to force termination
+    // You can add code here to force terminate the process if necessary
+  end;
+end;
+
 
 procedure TDosCommand.ThreadTerminated(ASender: TObject);
 var
